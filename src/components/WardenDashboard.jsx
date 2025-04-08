@@ -1,36 +1,78 @@
-import { useState, useEffect, useCallback } from 'react';
+// src/components/WardenDashboard.jsx
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
-function WardenDashboard() {  // Removed unused 'user' prop
-  const [requests, setRequests] = useState({ passes: [], discontinuations: [] });
-  const [comment, setComment] = useState('');
+function WardenDashboard({ user }) {
+  const [passes, setPasses] = useState([]);
+  const [discontinuations, setDiscontinuations] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [attendanceData, setAttendanceData] = useState({});
   const navigate = useNavigate();
 
-  const loadRequests = useCallback(async () => {
-    const { data: passes } = await supabase.from('passes').select('*').eq('status', 'pending').order('created_at', { ascending: false });
-    const { data: discontinuations } = await supabase.from('discontinuations').select('*').eq('status', 'pending').order('created_at', { ascending: false });
-    setRequests({ passes: passes || [], discontinuations: discontinuations || [] });
-  }, []);
-
   useEffect(() => {
-    loadRequests();
-    const passSub = supabase.channel('passes').on('postgres_changes', { event: '*', schema: 'public', table: 'passes' }, loadRequests).subscribe();
-    const discSub = supabase.channel('discontinuations').on('postgres_changes', { event: '*', schema: 'public', table: 'discontinuations' }, loadRequests).subscribe();
-    
+    if (!user?.id || user.role !== 'warden') navigate('/');
+    const fetchData = async () => {
+      const { data: passesData } = await supabase.from('passes').select('*').in('status', ['pending', 'approved', 'rejected']);
+      const { data: discData } = await supabase.from('discontinuations').select('*').in('status', ['pending', 'approved', 'rejected']);
+      const { data: studentsData } = await supabase.from('users').select('*').eq('role', 'student').eq('status', 'active').order('name');
+      setPasses(passesData || []);
+      setDiscontinuations(discData || []);
+      setStudents(studentsData || []);
+    };
+    fetchData();
+
+    const passSub = supabase.channel('passes').on('postgres_changes', { event: '*', schema: 'public', table: 'passes' }, payload => {
+      if (payload.eventType === 'INSERT') setPasses(prev => [...prev, payload.new]);
+      if (payload.eventType === 'UPDATE') setPasses(prev => prev.map(p => p.id === payload.new.id ? payload.new : p));
+      toast.info('Pass updated');
+    }).subscribe();
+
+    const discSub = supabase.channel('discontinuations').on('postgres_changes', { event: '*', schema: 'public', table: 'discontinuations' }, payload => {
+      if (payload.eventType === 'INSERT') setDiscontinuations(prev => [...prev, payload.new]);
+      if (payload.eventType === 'UPDATE') setDiscontinuations(prev => prev.map(d => d.id === payload.new.id ? payload.new : d));
+      toast.info('Discontinuation updated');
+    }).subscribe();
+
     return () => {
       supabase.removeChannel(passSub);
       supabase.removeChannel(discSub);
     };
-  }, [loadRequests]);
+  }, [user, navigate]);
 
-  const updateRequest = async (id, type, status) => {
-    const table = type === 'pass' ? 'passes' : 'discontinuations';
-    const { error } = await supabase.from(table).update({ status, warden_comment: comment }).eq('id', id);
-    if (error) toast.error(error.message);
-    else toast.success(`${type} ${status}`, { className: 'bg-teal-500 text-white' });
-    setComment('');
+  const updatePass = async (id, status, comment = '') => {
+    const { error } = await supabase.from('passes').update({ status, warden_comment: comment }).eq('id', id);
+    if (error) toast.error(`Failed to ${status} pass`);
+    else toast.success(`Pass ${status}`);
+  };
+
+  const updateDiscontinuation = async (id, status, comment = '') => {
+    const { error } = await supabase.from('discontinuations').update({ status, warden_comment: comment }).eq('id', id);
+    if (error) toast.error(`Failed to ${status} discontinuation`);
+    else {
+      toast.success(`Discontinuation ${status}`);
+      if (status === 'approved') {
+        const studentId = discontinuations.find(d => d.id === id).student_id;
+        await supabase.from('users').update({ status: 'vacated', room_no: null }).eq('id', studentId);
+      }
+    }
+  };
+
+  const markAttendance = async (studentId, date) => {
+    const present = attendanceData[studentId] || false;
+    const { error } = await supabase
+      .from('attendance')
+      .upsert(
+        [{ student_id: studentId, date, present }],
+        { onConflict: ['student_id', 'date'], update: ['present'] } // Update 'present' on conflict
+      );
+    if (error) {
+      console.error('Attendance error:', error);
+      toast.error('Failed to mark attendance');
+    } else {
+      toast.success('Attendance marked');
+    }
   };
 
   const logout = () => {
@@ -38,36 +80,63 @@ function WardenDashboard() {  // Removed unused 'user' prop
     navigate('/');
   };
 
+  const groupedStudents = students.reduce((acc, s) => {
+    acc[s.semester] = acc[s.semester] || [];
+    acc[s.semester].push(s);
+    return acc;
+  }, {});
+
   return (
     <div className="bg-gradient-to-br from-indigo-600 to-teal-500 min-h-screen font-poppins p-6">
       <div className="flex justify-between mb-6 animate-slide-in">
-        <h1 className="text-2xl font-bold text-white"><i className="fas fa-user-shield mr-2"></i> Welcome, Warden</h1>
-        <button onClick={logout} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition duration-300">Logout</button>
+        <h1 className="text-2xl font-bold text-white">Welcome, Warden</h1>
+        <button onClick={logout} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600">Logout</button>
       </div>
-      <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
-        <h2 className="text-xl font-semibold text-indigo-600 mb-4">Pending Requests</h2>
-        <h3 className="text-lg font-semibold text-gray-700 mb-2">Gate Passes</h3>
-        {requests.passes.map(pass => (
-          <div key={pass.id} className="p-4 bg-white rounded-lg mb-4 transform transition-all duration-300 hover:scale-105">
-            <p className="text-gray-700">ID: {pass.id} | {pass.name} ({pass.roll_no}) | Leave: {pass.leave_date} {pass.leave_time} | Return: {pass.return_date} {pass.return_time} | Reason: {pass.reason}</p>
-            <input className="w-full p-2 mt-2 border rounded-lg text-gray-700" placeholder="Add comment" value={comment} onChange={e => setComment(e.target.value)} />
-            <div className="mt-2 flex space-x-2">
-              <button onClick={() => updateRequest(pass.id, 'pass', 'approved')} className="bg-teal-500 text-white p-2 rounded-lg hover:bg-teal-600 transition duration-300">Approve</button>
-              <button onClick={() => updateRequest(pass.id, 'pass', 'rejected')} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition duration-300">Reject</button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
+          <h2 className="text-xl font-semibold text-indigo-600 mb-4">Pending Passes</h2>
+          {passes.filter(p => p.status === 'pending').map(pass => (
+            <div key={pass.id} className="p-4 bg-white rounded-lg mb-2">
+              <p>Name: {pass.name} | Roll No: {pass.roll_no} | Leave: {pass.leave_date} {pass.leave_time} | Return: {pass.return_date} {pass.return_time} | Reason: {pass.reason}</p>
+              <input className="w-full p-2 mt-2 border rounded-lg" placeholder="Comment" onChange={e => pass.warden_comment = e.target.value} />
+              <button onClick={() => updatePass(pass.id, 'approved', pass.warden_comment)} className="bg-green-500 text-white p-2 rounded-lg mt-2 mr-2 hover:bg-green-600">Approve</button>
+              <button onClick={() => updatePass(pass.id, 'rejected', pass.warden_comment)} className="bg-red-500 text-white p-2 rounded-lg mt-2 hover:bg-red-600">Reject</button>
             </div>
-          </div>
-        ))}
-        <h3 className="text-lg font-semibold text-gray-700 mb-2 mt-4">Discontinuations</h3>
-        {requests.discontinuations.map(d => (
-          <div key={d.id} className="p-4 bg-white rounded-lg mb-4 transform transition-all duration-300 hover:scale-105">
-            <p className="text-gray-700">ID: {d.id} | Reason: {d.reason}</p>
-            <input className="w-full p-2 mt-2 border rounded-lg text-gray-700" placeholder="Add comment" value={comment} onChange={e => setComment(e.target.value)} />
-            <div className="mt-2 flex space-x-2">
-              <button onClick={() => updateRequest(d.id, 'discontinuation', 'approved')} className="bg-teal-500 text-white p-2 rounded-lg hover:bg-teal-600 transition duration-300">Approve</button>
-              <button onClick={() => updateRequest(d.id, 'discontinuation', 'rejected')} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition duration-300">Reject</button>
+          ))}
+        </div>
+        <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
+          <h2 className="text-xl font-semibold text-indigo-600 mb-4">Pending Discontinuations</h2>
+          {discontinuations.filter(d => d.status === 'pending').map(d => (
+            <div key={d.id} className="p-4 bg-white rounded-lg mb-2">
+              <p>Reason: {d.reason}</p>
+              <input className="w-full p-2 mt-2 border rounded-lg" placeholder="Comment" onChange={e => d.warden_comment = e.target.value} />
+              <button onClick={() => updateDiscontinuation(d.id, 'approved', d.warden_comment)} className="bg-green-500 text-white p-2 rounded-lg mt-2 mr-2 hover:bg-green-600">Approve</button>
+              <button onClick={() => updateDiscontinuation(d.id, 'rejected', d.warden_comment)} className="bg-red-500 text-white p-2 rounded-lg mt-2 hover:bg-red-600">Reject</button>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
+          <h2 className="text-xl font-semibold text-indigo-600 mb-4">Mark Attendance</h2>
+          {Object.entries(groupedStudents).map(([semester, students]) => (
+            <div key={semester}>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Semester {semester}</h3>
+              {students.map(s => (
+                <div key={s.id} className="p-4 bg-white rounded-lg mb-2 flex justify-between items-center">
+                  <p>{s.name} ({s.roll_no})</p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={attendanceData[s.id] || false}
+                      onChange={e => setAttendanceData({ ...attendanceData, [s.id]: e.target.checked })}
+                    />
+                    <span className="ml-2">Present</span>
+                  </label>
+                  <button onClick={() => markAttendance(s.id, new Date().toISOString().split('T')[0])} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700">Mark</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
