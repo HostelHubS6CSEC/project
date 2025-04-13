@@ -1,0 +1,32 @@
+/* Custom Styles */
+.role-btn, .dash-btn, .auth-btn {
+    @apply bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 w-full;
+}
+
+.input-field {
+    @apply block w-full p-2 mb-3 border rounded-lg;
+}
+
+.dashboard {
+    @apply bg-white text-black p-6 rounded-lg shadow-lg max-w-4xl mx-auto mt-6;
+}
+
+/* Animation Classes */
+.animate-bounce {
+    animation: bounce 2s infinite;
+}
+
+.animate-spin-slow {
+    animation: spin 10s linear infinite;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-20px); }
+    60% { transform: translateY(-10px); }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

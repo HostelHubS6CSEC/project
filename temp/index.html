@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HostelHub</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/gsap.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gradient-to-r from-blue-500 to-indigo-600 min-h-screen text-white">
+    <!-- Header -->
+    <header class="flex items-center justify-between p-4 bg-indigo-800 shadow-lg">
+        <div class="flex items-center">
+            <img src="https://img.freepik.com/free-vector/gradient-house-logo-template_23-2148671588.jpg" alt="HostelHub Logo" class="w-16 h-16">
+            <h1 class="text-2xl font-bold ml-4">HostelHub</h1>
+        </div>
+        <nav>
+            <ul class="flex space-x-6">
+                <li><a href="#" class="hover:text-yellow-300 transition">Home</a></li>
+                <li><a href="#" class="hover:text-yellow-300 transition">Contact</a></li>
+                <li><a href="#" onclick="openAuthModal('login')" class="hover:text-yellow-300 transition">Login</a></li>
+                <li><a href="#" onclick="openAuthModal('signup')" class="hover:text-yellow-300 transition">Sign Up</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Hero Section with Graphics and Animations -->
+    <section id="home" class="relative text-center py-20 overflow-hidden">
+        <div class="absolute inset-0 z-0">
+            <img src="https://img.freepik.com/free-vector/flat-design-illustration-houses_23-2148679970.jpg" alt="Hostel Background" class="w-full h-full object-cover opacity-20">
+        </div>
+        <div class="relative z-10">
+            <h1 class="text-5xl font-extrabold mb-4">Welcome to HostelHub</h1>
+            <p class="text-xl mb-6">Your modern solution for hostel living.</p>
+            <div class="flex justify-center space-x-6">
+                <img src="https://img.freepik.com/free-vector/flat-design-youth-day-illustration_23-2149394396.jpg" alt="Students" class="w-32 h-32 animate-bounce">
+                <img src="https://img.freepik.com/free-vector/flat-design-house-illustration_23-2148679971.jpg" alt="Hostel" class="w-32 h-32 animate-spin-slow">
+            </div>
+            <button onclick="openAuthModal('signup')" class="mt-6 bg-yellow-400 text-indigo-800 py-3 px-6 rounded-full font-bold hover:bg-yellow-500 transition">Get Started</button>
+        </div>
+    </section>
+
+    <!-- Auth Modal (unchanged from previous) -->
+    <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white text-black p-6 rounded-lg w-1/3">
+            <span class="float-right text-2xl cursor-pointer" onclick="closeAuthModal()">×</span>
+            <h2 id="authTitle" class="text-2xl font-bold mb-4"></h2>
+            <div id="roleSelection" class="mb-4">
+                <p>Select Role:</p>
+                <button onclick="setRole('hosteller')" class="role-btn">Hosteller</button>
+                <button onclick="setRole('warden')" class="role-btn">Warden</button>
+                <button onclick="setRole('mess_incharge')" class="role-btn">Mess Incharge</button>
+                <button onclick="setRole('security')" class="role-btn">Security</button>
+            </div>
+            <form id="authForm" class="hidden">
+                <p id="selectedRoleText" class="mb-2"></p>
+                <input type="text" id="hostelRollNo" placeholder="Hostel Roll No" class="input-field" required>
+                <input type="number" id="semester" placeholder="Semester (for students)" class="input-field">
+                <input type="email" id="email" placeholder="Email" class="input-field" required>
+                <input type="password" id="password" placeholder="Password" class="input-field" required>
+                <button type="submit" class="auth-btn">Submit</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboards (unchanged, add as needed) -->
+    <div id="hostellerDashboard" class="dashboard hidden">
+        <h2 class="text-3xl font-bold mb-6">Hosteller Dashboard</h2>
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="openGatePassForm()" class="dash-btn">Request Gate Pass</button>
+            <button onclick="viewMessFees()" class="dash-btn">View Mess Fees</button>
+            <button onclick="discontinueStay()" class="dash-btn">Discontinue Stay</button>
+            <button onclick="logout()" class="dash-btn">Logout</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

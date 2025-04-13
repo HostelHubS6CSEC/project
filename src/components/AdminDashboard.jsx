@@ -9,16 +9,27 @@ function AdminDashboard({ user }) {
   const [students, setStudents] = useState([]);
   const [roomNo, setRoomNo] = useState('');
   const [newStaff, setNewStaff] = useState({ roll_no: '', password: '', role: '', name: '', phone: '' });
-  const [noticeForm, setNoticeForm] = useState({ title: '', content: '' });
+  const [noticeForm, setNoticeForm] = useState({ title: '', content: '', pdf: null });
+  const [notices, setNotices] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!user?.id || user.role !== 'admin') navigate('/');
-    const fetchStudents = async () => {
-      const { data } = await supabase.from('users').select('*').eq('role', 'student');
-      setStudents(data || []);
+    const fetchData = async () => {
+      const { data: studentsData } = await supabase.from('users').select('*').eq('role', 'student');
+      const { data: noticesData } = await supabase.from('notices').select('*').order('posted_at', { ascending: false });
+      setStudents(studentsData || []);
+      setNotices(noticesData || []);
     };
-    fetchStudents();
+    fetchData();
+
+    const noticeSub = supabase.channel('notices').on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, payload => {
+      if (payload.eventType === 'INSERT') setNotices(prev => [payload.new, ...prev]);
+      if (payload.eventType === 'DELETE') setNotices(prev => prev.filter(n => n.id !== payload.old.id));
+      toast.info(`Notice: ${payload.eventType === 'INSERT' ? payload.new.title : 'Deleted'}`);
+    }).subscribe();
+
+    return () => supabase.removeChannel(noticeSub);
   }, [user, navigate]);
 
   const allotRoom = async (studentId) => {
@@ -52,14 +63,41 @@ function AdminDashboard({ user }) {
   };
 
   const postNotice = async () => {
+    let pdfUrl = null;
+    if (noticeForm.pdf) {
+      try {
+        const filePath = `pdfs/${Date.now()}_${noticeForm.pdf.name}`;
+        const { data, error: uploadError } = await supabase.storage
+          .from('notices')
+          .upload(filePath, noticeForm.pdf, { upsert: true });
+        if (uploadError) {
+          console.error('PDF upload error:', uploadError);
+          toast.error(`Failed to upload PDF: ${uploadError.message}`);
+          return;
+        }
+        const { data: publicData } = supabase.storage.from('notices').getPublicUrl(filePath);
+        pdfUrl = publicData.publicUrl;
+      } catch (error) {
+        console.error('Unexpected error during PDF upload:', error);
+        toast.error('An unexpected error occurred during PDF upload');
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from('notices')
-      .insert([{ title: noticeForm.title, content: noticeForm.content, posted_by: user.id }]);
+      .insert([{ title: noticeForm.title, content: noticeForm.content, posted_by: user.id, pdf_url: pdfUrl }]);
     if (error) toast.error('Failed to post notice');
     else {
       toast.success('Notice posted');
-      setNoticeForm({ title: '', content: '' });
+      setNoticeForm({ title: '', content: '', pdf: null });
     }
+  };
+
+  const deleteNotice = async (noticeId) => {
+    const { error } = await supabase.from('notices').delete().eq('id', noticeId);
+    if (error) toast.error('Failed to delete notice');
+    else toast.success('Notice deleted');
   };
 
   const logout = () => {
@@ -110,7 +148,21 @@ function AdminDashboard({ user }) {
           <h2 className="text-xl font-semibold text-indigo-600 mb-4">Post Notice</h2>
           <input className="w-full p-2 mb-2 border rounded-lg" placeholder="Title" value={noticeForm.title} onChange={e => setNoticeForm({ ...noticeForm, title: e.target.value })} />
           <textarea className="w-full p-2 mb-2 border rounded-lg" placeholder="Content" value={noticeForm.content} onChange={e => setNoticeForm({ ...noticeForm, content: e.target.value })} />
+          <input type="file" accept="application/pdf" className="w-full p-2 mb-2" onChange={e => setNoticeForm({ ...noticeForm, pdf: e.target.files[0] })} />
           <button onClick={postNotice} className="w-full bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700">Post Notice</button>
+        </div>
+        <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
+          <h2 className="text-xl font-semibold text-indigo-600 mb-4">Manage Notices</h2>
+          {notices.map(notice => (
+            <div key={notice.id} className="p-4 bg-white rounded-lg mb-2 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold">{notice.title}</h3>
+                <p className="text-sm text-gray-600">{notice.content}</p>
+                <p className="text-xs text-gray-500">Posted: {new Date(notice.posted_at).toLocaleString()}</p>
+              </div>
+              <button onClick={() => deleteNotice(notice.id)} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600">Delete</button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
