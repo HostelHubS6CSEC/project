@@ -100,6 +100,91 @@ function AdminDashboard({ user }) {
     else toast.success('Notice deleted');
   };
 
+  const deleteUser = async (userId) => {
+    if (window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      try {
+        console.log(`Starting deletion process for user ${userId}`);
+
+        // Fetch all pass IDs for the user
+        const { data: passesData, error: fetchError } = await supabase
+          .from('passes')
+          .select('id')
+          .eq('student_id', userId);
+        if (fetchError) {
+          console.error('Error fetching passes:', fetchError);
+          throw new Error(`Failed to fetch passes: ${fetchError.message}`);
+        }
+        const passIds = passesData.map(p => p.id);
+
+        // Delete related records in verification_logs for the user's passes
+        if (passIds.length > 0) {
+          console.log(`Deleting verification_logs for pass IDs: ${passIds.join(', ')}`);
+          const { error: logError } = await supabase
+            .from('verification_logs')
+            .delete()
+            .in('pass_id', passIds);
+          if (logError) {
+            console.error('Error deleting verification_logs:', logError);
+            throw new Error(`Failed to delete verification_logs: ${logError.message}`);
+          }
+          console.log('Successfully deleted verification_logs');
+        }
+
+        // Delete related records in dependent tables
+        const deleteRelated = async (table, column) => {
+          console.log(`Attempting to delete from ${table} for ${column}=${userId}`);
+          const { error } = await supabase.from(table).delete().eq(column, userId);
+          if (error) {
+            console.error(`Error deleting from ${table}:`, error);
+            throw new Error(`Failed to delete from ${table}: ${error.message}`);
+          }
+          console.log(`Successfully deleted from ${table}`);
+        };
+
+        await deleteRelated('passes', 'student_id');
+        await deleteRelated('discontinuations', 'student_id');
+        await deleteRelated('attendance', 'student_id');
+        await deleteRelated('mess_billing', 'student_id');
+
+        // Verify deletion of related records
+        const checkRelated = async (table, column) => {
+          console.log(`Checking ${table} for remaining records with ${column}=${userId}`);
+          const { data, error } = await supabase.from(table).select(column).eq(column, userId);
+          if (error) {
+            console.error(`Error checking ${table}:`, error);
+            throw new Error(`Failed to check ${table}: ${error.message}`);
+          }
+          const isClear = data.length === 0;
+          if (!isClear) console.warn(`Found ${data.length} remaining records in ${table}`);
+          return isClear;
+        };
+
+        const passesClear = await checkRelated('passes', 'student_id');
+        const discontinuationsClear = await checkRelated('discontinuations', 'student_id');
+        const attendanceClear = await checkRelated('attendance', 'student_id');
+        const billingClear = await checkRelated('mess_billing', 'student_id');
+
+        if (!(passesClear && discontinuationsClear && attendanceClear && billingClear)) {
+          throw new Error('Related records still exist');
+        }
+
+        // Delete the user
+        console.log(`Attempting to delete user ${userId}`);
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) {
+          console.error('Delete user error:', error);
+          throw error;
+        }
+        console.log(`Successfully deleted user ${userId}`);
+        toast.success('User and related data deleted');
+        setStudents(prev => prev.filter(s => s.id !== userId));
+      } catch (error) {
+        console.error('Error during deletion process:', error);
+        toast.error(`Failed to delete user: ${error.message || 'Unknown error'}`);
+      }
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('user');
     navigate('/');
@@ -115,8 +200,10 @@ function AdminDashboard({ user }) {
         <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
           <h2 className="text-xl font-semibold text-indigo-600 mb-4">Manage Students</h2>
           {students.map(s => (
-            <div key={s.id} className="p-4 bg-white rounded-lg mb-2">
-              <p>Name: {s.name} | Roll No: {s.roll_no} | Room: {s.room_no || 'Not Allotted'} | Status: {s.status}</p>
+            <div key={s.id} className="p-4 bg-white rounded-lg mb-2 flex justify-between items-center">
+              <div>
+                <p>Name: {s.name} | Roll No: {s.roll_no} | Room: {s.room_no || 'Not Allotted'} | Status: {s.status}</p>
+              </div>
               {s.status === 'pending' && (
                 <>
                   <input
@@ -128,6 +215,12 @@ function AdminDashboard({ user }) {
                   <button onClick={() => allotRoom(s.id)} className="bg-green-500 text-white p-2 rounded-lg mt-2 ml-2">Allot Room</button>
                 </>
               )}
+              <button
+                onClick={() => deleteUser(s.id)}
+                className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 ml-2"
+              >
+                Delete
+              </button>
             </div>
           ))}
         </div>

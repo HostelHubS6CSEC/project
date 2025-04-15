@@ -1,14 +1,15 @@
 // src/components/WardenDashboard.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { FixedSizeList } from 'react-window'; // For virtualization
 
 function WardenDashboard({ user }) {
   const [passes, setPasses] = useState([]);
   const [discontinuations, setDiscontinuations] = useState([]);
   const [students, setStudents] = useState([]);
-  const [attendanceData, setAttendanceData] = useState({});
+  const [attendanceData, setAttendanceData] = useState({}); // Tracks present status per student
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,18 +62,29 @@ function WardenDashboard({ user }) {
 
   const markAttendance = async (studentId, date) => {
     const present = attendanceData[studentId] || false;
-    const { error } = await supabase
-      .from('attendance')
-      .upsert(
-        [{ student_id: studentId, date, present }],
-        { onConflict: ['student_id', 'date'], update: ['present'] } // Update 'present' on conflict
-      );
-    if (error) {
-      console.error('Attendance error:', error);
-      toast.error('Failed to mark attendance');
+    if (present) {
+      const { error } = await supabase
+        .from('attendance')
+        .upsert(
+          [{ student_id: studentId, date, present }],
+          { onConflict: ['student_id', 'date'], update: ['present'] }
+        );
+      if (error) {
+        console.error('Attendance error:', error);
+        toast.error('Failed to mark attendance');
+      } else {
+        toast.success('Attendance marked');
+      }
     } else {
-      toast.success('Attendance marked');
+      toast.info('Marking skipped: Student not marked present');
     }
+  };
+
+  const toggleAttendance = (studentId) => {
+    setAttendanceData(prev => ({
+      ...prev,
+      [studentId]: !prev[studentId]
+    }));
   };
 
   const logout = () => {
@@ -85,6 +97,36 @@ function WardenDashboard({ user }) {
     acc[s.semester].push(s);
     return acc;
   }, {});
+
+  // Row renderer for virtualized list
+  const Row = useCallback(({ index, style }) => {
+    const semester = Object.keys(groupedStudents)[index];
+    const studentsInSemester = groupedStudents[semester];
+    return (
+      <div style={style}>
+        <h3 className="text-lg font-semibold text-gray-700 mb-2">Semester {semester}</h3>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {studentsInSemester.map(s => (
+            <button
+              key={s.id}
+              onClick={() => toggleAttendance(s.id)}
+              className={`px-3 py-1 rounded-lg text-sm ${attendanceData[s.id] ? 'bg-green-500 text-white' : 'bg-gray-300 text-black'} hover:bg-opacity-80`}
+            >
+              {s.roll_no}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => {
+            studentsInSemester.forEach(s => markAttendance(s.id, new Date().toISOString().split('T')[0]));
+          }}
+          className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"
+        >
+          Mark Attendance
+        </button>
+      </div>
+    );
+  }, [groupedStudents, attendanceData, markAttendance]);
 
   return (
     <div className="bg-gradient-to-br from-indigo-600 to-teal-500 min-h-screen font-poppins p-6">
@@ -117,25 +159,15 @@ function WardenDashboard({ user }) {
         </div>
         <div className="bg-gray-100 p-6 rounded-2xl shadow-lg animate-fade-in">
           <h2 className="text-xl font-semibold text-indigo-600 mb-4">Mark Attendance</h2>
-          {Object.entries(groupedStudents).map(([semester, students]) => (
-            <div key={semester}>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Semester {semester}</h3>
-              {students.map(s => (
-                <div key={s.id} className="p-4 bg-white rounded-lg mb-2 flex justify-between items-center">
-                  <p>{s.name} ({s.roll_no})</p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={attendanceData[s.id] || false}
-                      onChange={e => setAttendanceData({ ...attendanceData, [s.id]: e.target.checked })}
-                    />
-                    <span className="ml-2">Present</span>
-                  </label>
-                  <button onClick={() => markAttendance(s.id, new Date().toISOString().split('T')[0])} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700">Mark</button>
-                </div>
-              ))}
-            </div>
-          ))}
+          <FixedSizeList
+            height={400} // Fixed height of the list container
+            width="100%"
+            itemCount={Object.keys(groupedStudents).length}
+            itemSize={150} // Approximate height per semester section (adjust as needed)
+            overscanCount={5}
+          >
+            {Row}
+          </FixedSizeList>
         </div>
       </div>
     </div>
