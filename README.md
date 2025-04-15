@@ -6,11 +6,7 @@ Welcome to the Hostel Management System, a web application designed to streamlin
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Installation](#installation)
-- [Usage](#usage)
 - [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
 
 ## Features
 - **Admin Dashboard**: Manage students, add wardens/security staff, post notices, and delete users with associated data.
