@@ -22,9 +22,9 @@ Welcome to the Hostel Management System, a web application designed to streamlin
 ## Tech Stack
 - **Frontend**: React, Tailwind CSS, jsPDF
 - **Backend/Data**: Supabase (Authentication, Realtime, Storage)
-- **Storage**: Amazon S3 for profile pictures
-- **Deployment**: Google Cloud App Engine
-- **Dependencies**: Node.js, npm, Google Cloud SDK
+- **Storage**: Supabase Bucket
+- **Deployment**: Netlify
+- **Dependencies**: Node.js, npm
 
 ## Installation
 
@@ -39,3 +39,15 @@ Welcome to the Hostel Management System, a web application designed to streamlin
    ```bash
    git clone https://github.com/HostelHubS6CSEC/project.git
    cd project
+2. Install dependencies:
+   ```bash
+   npm install
+3. Change the .env file contents to include your supabase url and anon key
+4. Run the server
+   ```bash
+   npm run dev
+5. Visit https://localhost:5173/
+
+
+#Deployed Version 
+   can be found at https://hostelhub-mini.netlify.app/
